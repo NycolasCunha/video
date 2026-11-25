@@ -1,0 +1,657 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Sensor de Ré IoT</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=VT323&display=swap" rel="stylesheet">
+<style>
+/* Layout: barra fina de controles no topo e um palco 3D ocupando o resto da tela. Cena noturna de garagem, tema escuro único. */
+:root {
+  --bg: #070b12;
+  --panel: #0e1624;
+  --line: #1d2b42;
+  --fg: #d9e4f5;
+  --mute: #7f93b3;
+  --accent: #2f7bff;
+  --led-g: #35f27a;
+  --led-y: #ffd23a;
+  --led-r: #ff3b3b;
+  --f-display: 'Chakra Petch', system-ui, sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 var(--f-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.name { min-width: 0; }
+h1 { margin: 0; font: 600 18px/1.1 var(--f-display); letter-spacing: .06em; text-transform: uppercase; }
+.name p { margin: 3px 0 0; color: var(--mute); font-size: 12px; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font: 500 12px var(--f-mono);
+  letter-spacing: .04em;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button[aria-pressed="true"] { border-color: var(--accent); background: #12254a; color: #fff; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#stage {
+  position: relative;
+  flex: 1;
+  min-height: 300px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #04070d;
+}
+#stage canvas { display: block; width: 100%; height: 100%; }
+.fail { margin: 0; padding: 24px; color: var(--mute); }
+.hud {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 9px 14px;
+  background: rgba(5, 9, 16, .74);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+}
+.hud .k { display: block; margin-bottom: 3px; font-size: 10px; letter-spacing: .14em; color: var(--mute); }
+.hud .v { display: block; font: 600 22px/1 var(--f-display); font-variant-numeric: tabular-nums; min-width: 4.6ch; }
+.leds { display: flex; gap: 9px; align-self: flex-end; padding-bottom: 3px; }
+.leds i { width: 13px; height: 13px; border-radius: 50%; background: #1a2233; transition: background .2s, box-shadow .2s; }
+.leds i.g.on { background: var(--led-g); box-shadow: 0 0 10px var(--led-g); }
+.leds i.y.on { background: var(--led-y); box-shadow: 0 0 10px var(--led-y); }
+.leds i.r.on { background: var(--led-r); box-shadow: 0 0 10px var(--led-r); }
+@media (max-width: 520px) {
+  h1 { font-size: 16px; }
+  .hud .v { font-size: 18px; }
+}
+</style>
+
+<header class="bar">
+  <div class="name">
+    <h1>Sensor de Ré IoT</h1>
+    <p>Ultrassônico HC-SR04 · LCD 16×2 · 3 LEDs · câmera lenta</p>
+  </div>
+  <div class="ctl">
+    <button id="bPause" type="button">Pausar</button>
+    <button id="bRestart" type="button">Reiniciar</button>
+    <button id="b4k" type="button" aria-pressed="false">4K: desligado</button>
+    <button id="bSound" type="button" aria-pressed="false">Bipe: desligado</button>
+  </div>
+</header>
+
+<main id="stage">
+  <div class="hud">
+    <div><span class="k">DISTÂNCIA</span><span class="v" id="hDist">---</span></div>
+    <div><span class="k">ESTADO</span><span class="v" id="hState">LIVRE</span></div>
+    <div class="leds" aria-hidden="true"><i class="g" id="hG"></i><i class="y" id="hY"></i><i class="r" id="hR"></i></div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var stage = document.getElementById('stage');
+  function fail(msg) { stage.insertAdjacentHTML('afterbegin', '<p class="fail">' + msg + '</p>'); }
+  if (typeof THREE === 'undefined') { fail('Não foi possível carregar a biblioteca 3D.'); return; }
+
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (e) { fail('Seu navegador não conseguiu iniciar o WebGL.'); return; }
+
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(DPR);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  stage.insertBefore(renderer.domElement, stage.firstChild);
+  var maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+  var col = function (h) { return new THREE.Color(h).convertSRGBToLinear(); };
+  var clamp = THREE.MathUtils.clamp;
+
+  /* ---------- cena, névoa, câmera ---------- */
+  var scene = new THREE.Scene();
+  scene.background = col(0x04070d);
+  scene.fog = new THREE.FogExp2(col(0x04070d), 0.036);
+  var cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 90);
+
+  /* ---------- ambiente para reflexos (sala de estúdio simples) ---------- */
+  try {
+    var pm = new THREE.PMREMGenerator(renderer);
+    var es = new THREE.Scene();
+    es.add(new THREE.Mesh(new THREE.BoxGeometry(30, 14, 30), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.012, 0.025, 0.06), side: THREE.BackSide })));
+    var hot = function (r, g, b) { return new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b) }); };
+    var panel = function (w, h, d, x, y, z, m) { var mm = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); mm.position.set(x, y, z); es.add(mm); };
+    panel(2, 0.2, 10, 0, 6.6, -2, hot(7, 7.5, 8));
+    panel(2, 0.2, 10, 5, 6.6, 3, hot(5, 5.5, 6));
+    panel(0.2, 5, 12, -8, 3, 0, hot(0.5, 1.3, 3.4));
+    panel(0.2, 3, 8, 9, 3, -3, hot(2.6, 2.2, 1.6));
+    scene.environment = pm.fromScene(es, 0.03).texture;
+    pm.dispose();
+  } catch (e) { /* sem ambiente: os materiais continuam funcionando com as luzes */ }
+
+  /* ---------- texturas procedurais ---------- */
+  function mkTex(c, rx, ry) {
+    var t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding;
+    t.anisotropy = maxAniso;
+    if (rx) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); }
+    return t;
+  }
+  function grain(size, base, rgb, n, alpha) {
+    var c = document.createElement('canvas'); c.width = c.height = size;
+    var g = c.getContext('2d');
+    g.fillStyle = base; g.fillRect(0, 0, size, size);
+    var i;
+    for (i = 0; i < 22; i++) {
+      g.fillStyle = 'rgba(' + rgb + ',' + (0.025 + Math.random() * 0.035) + ')';
+      g.beginPath(); g.arc(Math.random() * size, Math.random() * size, 30 + Math.random() * 90, 0, 6.283); g.fill();
+    }
+    for (i = 0; i < n; i++) {
+      var v = Math.random() < 0.5 ? 0 : 255;
+      g.fillStyle = 'rgba(' + v + ',' + v + ',' + v + ',' + (Math.random() * alpha) + ')';
+      g.fillRect(Math.random() * size, Math.random() * size, 1 + Math.random() * 2, 1 + Math.random() * 2);
+    }
+    return c;
+  }
+  function glowTex() {
+    var c = document.createElement('canvas'); c.width = c.height = 128;
+    var g = c.getContext('2d');
+    var gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.16, 'rgba(255,255,255,.6)');
+    gr.addColorStop(0.5, 'rgba(255,255,255,.13)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  }
+  var GLOW = glowTex();
+  function halo(color, size, op) {
+    var s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: op, toneMapped: false }));
+    s.scale.set(size, size, 1);
+    return s;
+  }
+
+  /* ---------- luzes ---------- */
+  scene.add(new THREE.HemisphereLight(col(0x5b7bb0), col(0x0a0d14), 0.5));
+  var key = new THREE.DirectionalLight(col(0xbfd4ff), 0.85);
+  key.position.set(3, 9, 4);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -9; key.shadow.camera.right = 9;
+  key.shadow.camera.top = 9; key.shadow.camera.bottom = -9;
+  key.shadow.camera.near = 0.5; key.shadow.camera.far = 30;
+  key.shadow.bias = -0.0005;
+  scene.add(key);
+  var rim = new THREE.DirectionalLight(col(0x3a7bff), 0.55);
+  rim.position.set(-5, 3, -8);
+  scene.add(rim);
+  var spot = new THREE.SpotLight(col(0xdfeaff), 1.7, 16, 0.55, 0.7, 1.2);
+  spot.position.set(2.2, 4.2, -2.2);
+  spot.target.position.set(0, 2.0, -5.8);
+  scene.add(spot); scene.add(spot.target);
+
+  /* ---------- garagem: piso, paredes, teto, vaga ---------- */
+  var asphalt = new THREE.MeshStandardMaterial({ map: mkTex(grain(512, '#262a33', '40,48,64', 9000, 0.22), 10, 10), roughness: 0.5, metalness: 0.05, envMapIntensity: 0.55 });
+  var ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), asphalt);
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+  scene.add(ground);
+
+  var concrete = new THREE.MeshStandardMaterial({ map: mkTex(grain(512, '#3a404c', '70,80,100', 8000, 0.18), 8, 2), roughness: 0.85, metalness: 0, envMapIntensity: 0.3 });
+  var wall = new THREE.Mesh(new THREE.PlaneGeometry(30, 8), concrete);
+  wall.position.set(0, 4, -6.3); wall.receiveShadow = true;
+  scene.add(wall);
+  var concreteSide = concrete.clone(); concreteSide.map = mkTex(grain(512, '#323845', '70,80,100', 8000, 0.18), 10, 2);
+  var wallL = new THREE.Mesh(new THREE.PlaneGeometry(30, 8), concreteSide);
+  wallL.rotation.y = Math.PI / 2; wallL.position.set(-4.5, 4, 4); wallL.receiveShadow = true;
+  scene.add(wallL);
+  var ceil = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: col(0x0b0f16), roughness: 0.9 }));
+  ceil.rotation.x = Math.PI / 2; ceil.position.y = 4.6;
+  scene.add(ceil);
+  var lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 2.4, 2.6) });
+  [-2, 3, 8].forEach(function (z) {
+    var l = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 0.22), lampMat);
+    l.position.set(0, 4.55, z); scene.add(l);
+  });
+
+  var lineMat = new THREE.MeshStandardMaterial({ color: col(0xe9eef5), roughness: 0.7, emissive: col(0x1a2230) });
+  [-1.5, 1.5].forEach(function (x) {
+    var ln = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 20.3), lineMat);
+    ln.rotation.x = -Math.PI / 2; ln.position.set(x, 0.004, 3.85); ln.receiveShadow = true;
+    scene.add(ln);
+  });
+  var stopBar = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.2), new THREE.MeshStandardMaterial({ color: col(0xb8b095), roughness: 0.8 }));
+  stopBar.position.set(0, 0.06, -4.95); stopBar.castShadow = true; stopBar.receiveShadow = true;
+  scene.add(stopBar);
+
+  /* ---------- caixa IoT azul com LCD, LEDs e sensor ---------- */
+  function roundedRect(w, h, r) {
+    var s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+    s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+    s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+    s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+    return s;
+  }
+  var box = new THREE.Group();
+  box.position.set(0, 2.05, -6.24);
+  scene.add(box);
+
+  var bracket = new THREE.Mesh(new THREE.BoxGeometry(1.58, 1.2, 0.05), new THREE.MeshStandardMaterial({ color: col(0x1c2230), roughness: 0.5, metalness: 0.6 }));
+  bracket.position.set(0, 2.05, -6.275); bracket.castShadow = true;
+  scene.add(bracket);
+
+  var bodyGeo = new THREE.ExtrudeGeometry(roundedRect(1.4, 1.05, 0.1), { depth: 0.36, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: 4, curveSegments: 8 });
+  var bodyMat = new THREE.MeshPhysicalMaterial({ color: col(0x1b57d9), roughness: 0.36, metalness: 0.1, clearcoat: 0.7, clearcoatRoughness: 0.22, envMapIntensity: 1 });
+  var boxBody = new THREE.Mesh(bodyGeo, bodyMat);
+  boxBody.castShadow = true; boxBody.receiveShadow = true;
+  box.add(boxBody);
+  var FZ = 0.39; // plano frontal da caixa (local)
+
+  var bezel = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.47, 0.035), new THREE.MeshStandardMaterial({ color: col(0x07090d), roughness: 0.4, metalness: 0.3 }));
+  bezel.position.set(0, 0.2, FZ + 0.005); box.add(bezel);
+
+  var lcdC = document.createElement('canvas'); lcdC.width = 1024; lcdC.height = 320;
+  var lg = lcdC.getContext('2d');
+  var lcdT = new THREE.CanvasTexture(lcdC);
+  lcdT.encoding = THREE.sRGBEncoding; lcdT.anisotropy = maxAniso;
+  var lcd = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.3125), new THREE.MeshBasicMaterial({ map: lcdT, toneMapped: false }));
+  lcd.position.set(0, 0.2, FZ + 0.025); box.add(lcd);
+  var lcdLight = new THREE.PointLight(col(0x9cff5a), 0.55, 2.4, 2);
+  lcdLight.position.set(0, 0.2, FZ + 0.35); box.add(lcdLight);
+
+  var lcdKey = '';
+  function drawLCD(row1, fill) {
+    var k = row1 + '|' + fill;
+    if (k === lcdKey) return;
+    lcdKey = k;
+    var W = 1024, H = 320, padX = 34, padY = 30, gapY = 22;
+    var cw = (W - padX * 2) / 16, ch = (H - padY * 2 - gapY) / 2;
+    var gr = lg.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#bbf46d'); gr.addColorStop(1, '#8edb49');
+    lg.fillStyle = gr; lg.fillRect(0, 0, W, H);
+    var row, i, x, y, p;
+    for (row = 0; row < 2; row++) {
+      y = padY + row * (ch + gapY);
+      for (i = 0; i < 16; i++) {
+        x = padX + i * cw;
+        lg.fillStyle = 'rgba(60,120,20,0.20)'; lg.fillRect(x + 3, y, cw - 6, ch);
+        lg.fillStyle = 'rgba(30,80,10,0.10)';
+        for (p = 1; p < 5; p++) lg.fillRect(x + 3 + p * (cw - 6) / 5 - 0.5, y, 1, ch);
+        for (p = 1; p < 8; p++) lg.fillRect(x + 3, y + p * ch / 8 - 0.5, cw - 6, 1);
+      }
+    }
+    lg.fillStyle = '#0d2a06';
+    lg.shadowColor = 'rgba(20,60,0,.35)'; lg.shadowBlur = 3;
+    lg.font = Math.round(ch * 0.95) + 'px VT323, monospace';
+    lg.textAlign = 'center'; lg.textBaseline = 'middle';
+    var s = (row1 + '                ').slice(0, 16);
+    for (i = 0; i < 16; i++) {
+      if (s.charAt(i) !== ' ') lg.fillText(s.charAt(i), padX + i * cw + cw / 2, padY + ch * 0.54);
+    }
+    y = padY + ch + gapY;
+    for (i = 0; i < fill; i++) lg.fillRect(padX + i * cw + 6, y + 8, cw - 12, ch - 16);
+    lg.shadowBlur = 0;
+    lcdT.needsUpdate = true;
+  }
+
+  // transdutores ultrassônicos
+  var steel = new THREE.MeshStandardMaterial({ color: col(0xaeb6c4), roughness: 0.3, metalness: 0.9 });
+  var grill = new THREE.MeshStandardMaterial({ color: col(0x0a0d13), roughness: 0.5, metalness: 0.7 });
+  [-0.46, 0.46].forEach(function (x) {
+    var out = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.12, 36), steel);
+    out.rotation.x = Math.PI / 2; out.position.set(x, -0.22, FZ + 0.06); box.add(out);
+    var inn = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.125, 36), grill);
+    inn.rotation.x = Math.PI / 2; inn.position.set(x, -0.22, FZ + 0.065); box.add(inn);
+    var mid = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.13, 20), steel);
+    mid.rotation.x = Math.PI / 2; mid.position.set(x, -0.22, FZ + 0.066); box.add(mid);
+  });
+  var SENSOR_Z = box.position.z + FZ + 0.12;
+
+  // LEDs (verde, amarelo, vermelho)
+  var ledDefs = [
+    { x: -0.16, c: 0x22ff70, hex: 0x35f27a },
+    { x: 0.0, c: 0xffc21a, hex: 0xffd23a },
+    { x: 0.16, c: 0xff2a2a, hex: 0xff3b3b }
+  ];
+  var leds = ledDefs.map(function (d) {
+    var ring = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.068, 0.025, 20), grill);
+    ring.rotation.x = Math.PI / 2; ring.position.set(d.x, -0.2, FZ + 0.012); box.add(ring);
+    var mat = new THREE.MeshStandardMaterial({ color: col(0x101010), emissive: col(d.c), emissiveIntensity: 0.2, roughness: 0.25 });
+    var bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 20, 14), mat);
+    bulb.position.set(d.x, -0.2, FZ + 0.03); box.add(bulb);
+    var h = halo(col(d.c), 0.5, 0.05); h.position.set(d.x, -0.2, FZ + 0.1); box.add(h);
+    var pl = new THREE.PointLight(col(d.c), 0, 1.6, 2); pl.position.set(d.x, -0.2, FZ + 0.25); box.add(pl);
+    return { mat: mat, halo: h, light: pl, lvl: 0.12 };
+  });
+
+  // etiqueta, parafusos, antena, cabo
+  var lab = document.createElement('canvas'); lab.width = 512; lab.height = 56;
+  var lgx = lab.getContext('2d');
+  lgx.fillStyle = 'rgba(235,242,255,.92)';
+  lgx.font = '500 28px "IBM Plex Mono", monospace'; lgx.textAlign = 'center'; lgx.textBaseline = 'middle';
+  lgx.fillText('SENSOR DE RÉ  ·  ESP32', 256, 30);
+  var labT = new THREE.CanvasTexture(lab); labT.encoding = THREE.sRGBEncoding; labT.anisotropy = maxAniso;
+  var labM = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.1), new THREE.MeshBasicMaterial({ map: labT, transparent: true, toneMapped: false }));
+  labM.position.set(0, -0.42, FZ + 0.003); box.add(labM);
+  [[-0.62, 0.46], [0.62, 0.46], [-0.62, -0.46], [0.62, -0.46]].forEach(function (p) {
+    var sc = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 12), steel);
+    sc.rotation.x = Math.PI / 2; sc.position.set(p[0], p[1], FZ + 0.012); box.add(sc);
+  });
+  var ant = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.34, 10), grill);
+  ant.position.set(0.5, 0.7, 0.1); box.add(ant);
+  var antBase = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.06, 12), grill);
+  antBase.position.set(0.5, 0.55, 0.1); box.add(antBase);
+  var cable = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.45, 12), grill);
+  cable.position.set(-0.4, -0.72, 0.15); box.add(cable);
+
+  /* ---------- carro ---------- */
+  var REAR = 2.27;
+  var bodyPaint = new THREE.MeshPhysicalMaterial({ color: col(0xe6ebf2), roughness: 0.3, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.1 });
+  var glassMat = new THREE.MeshPhysicalMaterial({ color: col(0x070d16), roughness: 0.06, metalness: 0.6, clearcoat: 1, envMapIntensity: 1.5 });
+  var darkMat = new THREE.MeshStandardMaterial({ color: col(0x0d1017), roughness: 0.6, metalness: 0.3 });
+  var tireMat = new THREE.MeshStandardMaterial({ color: col(0x0b0b0d), roughness: 0.9 });
+  var tailMat = new THREE.MeshStandardMaterial({ color: col(0x3a0606), emissive: col(0xff1a10), emissiveIntensity: 0.9, roughness: 0.3 });
+  var revMat = new THREE.MeshStandardMaterial({ color: col(0x404040), emissive: col(0xffffff), emissiveIntensity: 0, roughness: 0.3 });
+  var headMat = new THREE.MeshStandardMaterial({ color: col(0xdddddd), emissive: col(0xbfd8ff), emissiveIntensity: 0.6, roughness: 0.3 });
+
+  var carRoot = new THREE.Group();
+  var carPitch = new THREE.Group();
+  var carModel = new THREE.Group();
+  carModel.rotation.y = -Math.PI / 2;
+  carRoot.add(carPitch); carPitch.add(carModel);
+  scene.add(carRoot);
+
+  var prof = new THREE.Shape();
+  prof.moveTo(-2.18, 0.32);
+  prof.lineTo(-2.18, 0.70);
+  prof.quadraticCurveTo(-2.18, 0.86, -1.98, 0.90);
+  prof.lineTo(1.35, 0.92);
+  prof.quadraticCurveTo(2.0, 0.86, 2.16, 0.70);
+  prof.lineTo(2.18, 0.45);
+  prof.quadraticCurveTo(2.18, 0.32, 2.05, 0.32);
+  prof.lineTo(-2.05, 0.32);
+  var lowGeo = new THREE.ExtrudeGeometry(prof, { depth: 1.64, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.08, bevelSegments: 4, curveSegments: 10 });
+  lowGeo.translate(0, 0, -0.82);
+  carModel.add(new THREE.Mesh(lowGeo, bodyPaint));
+
+  var cab = new THREE.Shape();
+  cab.moveTo(-1.62, 0.9); cab.lineTo(-1.2, 1.36); cab.lineTo(0.28, 1.38); cab.lineTo(0.98, 0.92);
+  var cabGeo = new THREE.ExtrudeGeometry(cab, { depth: 1.46, bevelEnabled: false });
+  cabGeo.translate(0, 0, -0.73);
+  carModel.add(new THREE.Mesh(cabGeo, glassMat));
+  var roof = new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.07, 1.58), bodyPaint);
+  roof.position.set(-0.46, 1.41, 0); carModel.add(roof);
+  var bPillar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.46, 1.5), bodyPaint);
+  bPillar.position.set(-0.45, 1.14, 0); carModel.add(bPillar);
+  var skirt = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.08, 1.84), darkMat);
+  skirt.position.set(0, 0.34, 0); carModel.add(skirt);
+
+  var bump = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 1.7), darkMat);
+  bump.position.set(-2.275, 0.44, 0); carModel.add(bump);
+  var tailLights = [];
+  [-0.6, 0.6].forEach(function (z) {
+    var t = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.13, 0.46), tailMat);
+    t.position.set(-2.285, 0.78, z); carModel.add(t);
+    var h = halo(col(0xff2a1a), 0.8, 0.5); h.position.set(-2.4, 0.78, z); carModel.add(h);
+    tailLights.push(h);
+  });
+  var revLights = [];
+  [-0.2, 0.2].forEach(function (z) {
+    var r = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.09, 0.2), revMat);
+    r.position.set(-2.287, 0.76, z); carModel.add(r);
+    var h = halo(col(0xffffff), 0.6, 0); h.position.set(-2.4, 0.76, z); carModel.add(h);
+    revLights.push(h);
+  });
+  [-0.62, 0.62].forEach(function (z) {
+    var hl = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.42), headMat);
+    hl.position.set(2.2, 0.74, z); carModel.add(hl);
+  });
+  var grille = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.6), darkMat);
+  grille.position.set(2.24, 0.55, 0); carModel.add(grille);
+
+  var pc = document.createElement('canvas'); pc.width = 256; pc.height = 72;
+  var pg = pc.getContext('2d');
+  pg.fillStyle = '#f2f4f7'; pg.fillRect(0, 0, 256, 72);
+  pg.fillStyle = '#1b4fa8'; pg.fillRect(0, 0, 256, 16);
+  pg.fillStyle = '#10141c'; pg.font = '600 44px "Chakra Petch", monospace'; pg.textAlign = 'center'; pg.textBaseline = 'middle';
+  pg.fillText('ABC1D23', 128, 44);
+  var plate = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.14), new THREE.MeshBasicMaterial({ map: mkTex(pc) }));
+  plate.rotation.y = -Math.PI / 2; plate.position.set(-2.29, 0.55, 0); carModel.add(plate);
+
+  [-0.98, 0.98].forEach(function (z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.08), bodyPaint);
+    m.position.set(0.72, 1.0, z); carModel.add(m);
+  });
+
+  var wheelMat = new THREE.MeshStandardMaterial({ color: col(0xaab2c0), roughness: 0.3, metalness: 0.9 });
+  var spokeMat = new THREE.MeshStandardMaterial({ color: col(0x14171e), roughness: 0.5, metalness: 0.5 });
+  var wheels = [];
+  [[-1.4, -0.88], [-1.4, 0.88], [1.4, -0.88], [1.4, 0.88]].forEach(function (p) {
+    var g = new THREE.Group();
+    var tire = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 32), tireMat);
+    tire.rotation.x = Math.PI / 2; g.add(tire);
+    var rimM = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.25, 24), wheelMat);
+    rimM.rotation.x = Math.PI / 2; g.add(rimM);
+    for (var i = 0; i < 5; i++) {
+      var sp = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.38, 0.27), spokeMat);
+      sp.rotation.z = i * Math.PI / 5; g.add(sp);
+    }
+    g.position.set(p[0], 0.34, p[1]);
+    carModel.add(g); wheels.push(g);
+  });
+
+  var tailPL = [-0.6, 0.6].map(function (z) {
+    var l = new THREE.PointLight(col(0xff2a1a), 0.4, 3.4, 2);
+    l.position.set(-2.6, 0.75, z); carModel.add(l); return l;
+  });
+  var revPL = new THREE.PointLight(col(0xffffff), 0, 6, 2);
+  revPL.position.set(-2.6, 0.7, 0); carModel.add(revPL);
+
+  carRoot.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+  /* ---------- linha do tempo ---------- */
+  var T_IN = 18, T_HOLD = 4.5, T_OUT = 4, T_GAP = 1.2;
+  var TOTAL = T_IN + T_HOLD + T_OUT + T_GAP;
+  var T_LOOP = 3.0;
+  var Z_START = 7, Z_STOP = -5.28, Z_OUT = 9;
+  function carZ(t) {
+    if (t < T_IN) { var p = t / T_IN; return Z_START + (Z_STOP - Z_START) * (1 - Math.pow(1 - p, 2.4)); }
+    t -= T_IN;
+    if (t < T_HOLD) return Z_STOP;
+    t -= T_HOLD;
+    if (t < T_OUT) { var q = t / T_OUT; return Z_STOP + (Z_OUT - Z_STOP) * (q * q * (3 - 2 * q)); }
+    return Z_OUT;
+  }
+
+  /* ---------- câmera ---------- */
+  var P0 = new THREE.Vector3(4.0, 2.0, 1.2), T0 = new THREE.Vector3(0.0, 1.5, -4.0);
+  var P1 = new THREE.Vector3(1.75, 1.62, -2.85), T1 = new THREE.Vector3(0.05, 1.98, -5.75);
+  var camPos = new THREE.Vector3(), camTgt = new THREE.Vector3();
+  var dPos = new THREE.Vector3(), dTgt = new THREE.Vector3();
+
+  /* ---------- controles e estado ---------- */
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var simT = reduced ? T_IN + 1.5 : 7.5;
+  var paused = reduced;
+  var bPause = document.getElementById('bPause');
+  var bRestart = document.getElementById('bRestart');
+  var b4k = document.getElementById('b4k');
+  var bSound = document.getElementById('bSound');
+  var hDist = document.getElementById('hDist');
+  var hState = document.getElementById('hState');
+  var hG = document.getElementById('hG'), hY = document.getElementById('hY'), hR = document.getElementById('hR');
+  bPause.textContent = paused ? 'Continuar' : 'Pausar';
+  bPause.addEventListener('click', function () { paused = !paused; bPause.textContent = paused ? 'Continuar' : 'Pausar'; });
+  bRestart.addEventListener('click', function () { simT = T_LOOP; prevZ = carZ(simT); });
+
+  var hiRes = false;
+  function resize() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    var pr = hiRes ? clamp(3840 / w, 1, 4) : DPR;
+    renderer.setPixelRatio(pr);
+    renderer.setSize(w, h, false);
+    var a = w / h;
+    cam.aspect = a;
+    cam.fov = a >= 1.6 ? 38 : Math.min(78, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(19)) * 1.6 / a)));
+    cam.updateProjectionMatrix();
+  }
+  b4k.addEventListener('click', function () {
+    hiRes = !hiRes;
+    b4k.setAttribute('aria-pressed', String(hiRes));
+    b4k.textContent = '4K: ' + (hiRes ? 'ligado' : 'desligado');
+    resize();
+  });
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(stage); else window.addEventListener('resize', resize);
+  resize();
+
+  // bipe do sensor (só depois de um clique)
+  var audio = null, soundOn = false;
+  bSound.addEventListener('click', function () {
+    soundOn = !soundOn;
+    bSound.setAttribute('aria-pressed', String(soundOn));
+    bSound.textContent = 'Bipe: ' + (soundOn ? 'ligado' : 'desligado');
+    if (soundOn && !audio) {
+      try {
+        var A = window.AudioContext || window.webkitAudioContext;
+        var ctx = new A(), osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = 'square'; osc.frequency.value = 2400; gain.gain.value = 0;
+        osc.connect(gain); gain.connect(ctx.destination); osc.start();
+        audio = { ctx: ctx, gain: gain };
+      } catch (e) { audio = null; }
+    }
+    if (audio && audio.ctx.state === 'suspended') audio.ctx.resume();
+  });
+
+  try { if (document.fonts && document.fonts.load) document.fonts.load('100px VT323').then(function () { lcdKey = ''; }); } catch (e) {}
+
+  /* ---------- laço de animação ---------- */
+  var last = performance.now(), prevZ = carZ(simT);
+  var spin = 0, vs = 0, decelS = 0, pitch = 0, hudAcc = 1, shown = 250, state = 'LIVRE';
+  var camInit = false;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!paused) {
+      simT += dt;
+      if (simT >= TOTAL) { simT = T_LOOP; prevZ = carZ(simT); }
+    }
+    var rz = carZ(simT);
+    var dz = rz - prevZ; prevZ = rz;
+    carRoot.position.z = rz + REAR;
+
+    var back = (!paused && dt > 0) ? -dz / dt : 0;
+    var oldVs = vs;
+    vs += (back - vs) * Math.min(1, dt * 6);
+    var decel = dt > 0 ? (oldVs - vs) / dt : 0;
+    decelS += (decel - decelS) * Math.min(1, dt * 4);
+    spin += -dz / 0.34;
+    for (var i = 0; i < wheels.length; i++) wheels[i].rotation.z = spin;
+    var pt = -0.02 * clamp(decelS / 0.3, 0, 1);
+    pitch += (pt - pitch) * (1 - Math.exp(-dt * 6));
+    carPitch.rotation.x = pitch;
+
+    // luzes do carro
+    var phaseApproach = simT < T_IN, phaseHold = simT >= T_IN && simT < T_IN + T_HOLD;
+    var braking = phaseHold || (phaseApproach && simT > T_IN * 0.3);
+    var movingBack = vs > 0.04;
+    var tailI = braking ? 3.0 : 0.9;
+    tailMat.emissiveIntensity += (tailI - tailMat.emissiveIntensity) * Math.min(1, dt * 8);
+    for (i = 0; i < tailLights.length; i++) tailLights[i].material.opacity = 0.18 + tailMat.emissiveIntensity * 0.17;
+    var revT = movingBack ? 1 : 0;
+    revMat.emissiveIntensity += (revT * 3.2 - revMat.emissiveIntensity) * Math.min(1, dt * 8);
+    for (i = 0; i < revLights.length; i++) revLights[i].material.opacity = revMat.emissiveIntensity * 0.22;
+    revPL.intensity = revMat.emissiveIntensity * 0.6;
+    for (i = 0; i < tailPL.length; i++) tailPL[i].intensity = tailMat.emissiveIntensity * 0.45;
+
+    // leitura do sensor
+    var gap = rz - SENSOR_Z;
+    var cm = gap * 50;
+
+    // LEDs: verde sempre, amarelo abaixo de 100 cm, vermelho abaixo de 45 cm
+    var targets = [1, cm < 100 ? 1 : 0.12, cm < 45 ? 1 : 0.12];
+    for (i = 0; i < 3; i++) {
+      var L = leds[i];
+      L.lvl += (targets[i] - L.lvl) * Math.min(1, dt * 7);
+      L.mat.emissiveIntensity = 0.15 + L.lvl * 2.8;
+      L.halo.material.opacity = 0.04 + L.lvl * 0.85;
+      var sc = 0.3 + L.lvl * 0.4; L.halo.scale.set(sc, sc, 1);
+      L.light.intensity = L.lvl * 0.7;
+    }
+
+    // câmera acompanha a aproximação
+    var u = 1 - clamp((gap - 0.45) / 5.0, 0, 1);
+    var s = u * u * (3 - 2 * u);
+    dPos.copy(P0).lerp(P1, s); dTgt.copy(T0).lerp(T1, s);
+    var tt = now / 1000;
+    dPos.x += Math.sin(tt * 0.37) * 0.05; dPos.y += Math.sin(tt * 0.53) * 0.03;
+    if (!camInit) { camPos.copy(dPos); camTgt.copy(dTgt); camInit = true; }
+    var k = 1 - Math.exp(-dt * 4);
+    camPos.lerp(dPos, k); camTgt.lerp(dTgt, k);
+    cam.position.copy(camPos); cam.lookAt(camTgt);
+
+    // painel, LCD e bipe (cerca de 8 vezes por segundo)
+    hudAcc += dt;
+    if (hudAcc > 0.12) {
+      hudAcc = 0;
+      shown = Math.round(cm + (Math.random() - 0.5) * 1.4);
+      var txt, big = cm > 400;
+      if (cm > 120) state = 'LIVRE'; else if (cm > 60) state = 'CERCA'; else if (cm > 35) state = 'ATENC'; else state = 'PARE!';
+      if (big) txt = 'DIST>400cm ' + state;
+      else txt = 'DIST:' + String(clamp(shown, 2, 400)) + 'cm';
+      if (!big) txt = (txt + '                ').slice(0, 11) + state;
+      var fill = big ? 0 : Math.round(16 * (1 - clamp(cm / 250, 0, 1)));
+      drawLCD(txt, fill);
+      hDist.textContent = big ? '> 400 cm' : clamp(shown, 2, 400) + ' cm';
+      hState.textContent = state;
+      hG.classList.add('on');
+      hY.classList.toggle('on', cm < 100);
+      hR.classList.toggle('on', cm < 45);
+    }
+    if (audio && soundOn) {
+      var on = false;
+      if (!paused) {
+        if (cm < 30 && simT < T_IN + 1.5) on = true;
+        else if (cm >= 30 && cm < 150 && vs > 0.04) { var iv = 0.12 + (cm - 30) / 120 * 0.7; on = (simT % iv) < 0.07; }
+      }
+      audio.gain.gain.setTargetAtTime(on ? 0.025 : 0, audio.ctx.currentTime, 0.004);
+    }
+
+    renderer.render(scene, cam);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
